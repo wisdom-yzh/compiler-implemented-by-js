@@ -583,7 +583,30 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
                 expression(lv('='));
                 expr_type = tmp_expr_type;
                 asm_code.push(expr_type == VAR_TYPE.CHAR ? CMD.SC : CMD.SI);
-            } else if(token.match(TYPE.SYMBOLS, '?')) {
+            } else if(token.match(TYPE.SYMBOLS, 
+				['+=', '-=', '*=', '/=', '&=', '|=', '%=', '<<=', '>>='])) {
+				// 运算后赋值
+				var opt = {
+					'+=': CMD.ADD, '-=': CMD.SUB, '*=': CMD.MUL, '/=': CMD.DIV,
+					'&=': CMD.AND, '|=': CMD.OR,  '%=': CMD.MOD, 
+					'<<=': CMD.SHL, '>>=': CMD.SHR
+				};
+				var current = opt[token.value]; // 存在当前的指令
+                next();
+                if([CMD.LI, CMD.LC].indexOf(asm_code[asm_code.length - 1]) != -1) {
+                    asm_code[asm_code.length - 1] = CMD.PUSH;
+					asm_code.push(CMD.LI);
+					asm_code.push(CMD.PUSH);
+                } else {
+                    throw_exception();
+                }
+                expression(lv('='));
+                if(expr_type != tmp_expr_type) {
+					throw_exception();
+				}
+				asm_code.push(current);
+                asm_code.push(expr_type == VAR_TYPE.CHAR ? CMD.SC : CMD.SI);
+			} else if(token.match(TYPE.SYMBOLS, '?')) {
                 // <condition> ? <true_statement> : <false_statement>
                 next();
                 asm_code.push(CMD.JZ);
@@ -616,101 +639,22 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
                 expression(lv('&&'));
                 asm_code[a] = asm_code.length;
                 expr_type = VAR_TYPE.INT;
-            } else if(token.match(TYPE.SYMBOLS, '|')) {
+            } else if(token.match(TYPE.SYMBOLS,
+				['|', '&', '^', '+', '-', '*', '/', '%',
+				 '==', '!=', '<=', '>=', '<<', '>>', '<', '>'])) {
+				// 各类运算符的实现
+				var opt = {
+					'|': CMD.OR, '&': CMD.ADD, '^': CMD.XOR,
+					'+': CMD.ADD, '-': CMD.SUB, '*': CMD.MUL, '/': CMD.DIV,
+					'%': CMD.MOD, '==': CMD.EQ, '!=': CMD.NE,
+					'>=': CMD.GE, '<=': CMD.LE, '>': CMD.GT, '<': CMD.LT,
+					'<<': CMD.SHL, '>>': CMD.SHR
+				};
+				current = opt[token.value];
                 next();
                 asm_code.push(CMD.PUSH);
-                expression(lv('|'));
-                asm_code.push(CMD.OR);
-                expr_type = VAR_TYPE.INT;
-            } else if(token.match(TYPE.SYMBOLS, '&')) {
-                next();
-                asm_code.push(CMD.PUSH);
-                expression(lv('&'));
-                asm_code.push(CMD.AND);
-                expr_type = VAR_TYPE.INT;
-            } else if(token.match(TYPE.SYMBOLS, '^')) {
-                next();
-                asm_code.push(CMD.PUSH);
-                expression(lv('^'));
-                asm_code.push(CMD.XOR);
-                expr_type = VAR_TYPE.INT;
-            } else if(token.match(TYPE.SYMBOLS, '+')) {
-                next();
-                asm_code.push(CMD.PUSH);
-                expression(lv('+'));
-                asm_code.push(CMD.ADD);
-                expr_type = VAR_TYPE.INT;
-            } else if(token.match(TYPE.SYMBOLS, '-')) {
-                next();
-                asm_code.push(CMD.PUSH);
-                expression(lv('-'));
-                asm_code.push(CMD.SUB);
-                expr_type = VAR_TYPE.INT;
-            } else if(token.match(TYPE.SYMBOLS, '*')) {
-                next();
-                asm_code.push(CMD.PUSH);
-                expression(lv('*'));
-                asm_code.push(CMD.MUL);
-                expr_type = VAR_TYPE.INT;
-            } else if(token.match(TYPE.SYMBOLS, '/')) {
-                next();
-                asm_code.push(CMD.PUSH);
-                expression(lv('/'));
-                asm_code.push(CMD.DIV);
-                expr_type = VAR_TYPE.INT;
-            } else if(token.match(TYPE.SYMBOLS, '!=')) {
-                next();
-                asm_code.push(CMD.PUSH);
-                expression(lv('!='));
-                asm_code.push(CMD.NE);
-                expr_type = VAR_TYPE.INT;
-            } else if(token.match(TYPE.SYMBOLS, '==')) {
-                next();
-                asm_code.push(CMD.PUSH);
-                expression(lv('=='));
-                asm_code.push(CMD.EQ);
-                expr_type = VAR_TYPE.INT;
-            } else if(token.match(TYPE.SYMBOLS, '<=')) {
-                next();
-                asm_code.push(CMD.PUSH);
-                expression(lv('<='));
-                asm_code.push(CMD.LE);
-                expr_type = VAR_TYPE.INT;
-            } else if(token.match(TYPE.SYMBOLS, '>=')) {
-                next();
-                asm_code.push(CMD.PUSH);
-                expression(lv('>='));
-                asm_code.push(CMD.GE);
-                expr_type = VAR_TYPE.INT;
-            } else if(token.match(TYPE.SYMBOLS, '<')) {
-                next();
-                asm_code.push(CMD.PUSH);
-                expression(lv('<'));
-                asm_code.push(CMD.LT);
-                expr_type = VAR_TYPE.INT;
-            } else if(token.match(TYPE.SYMBOLS, '>')) {
-                next();
-                asm_code.push(CMD.PUSH);
-                expression(lv('|'));
-                asm_code.push(CMD.GT);
-                expr_type = VAR_TYPE.INT;
-            } else if(token.match(TYPE.SYMBOLS, '<<')) {
-                next();
-                asm_code.push(CMD.PUSH);
-                expression(lv('|'));
-                asm_code.push(CMD.SHL);
-                expr_type = VAR_TYPE.INT;
-            } else if(token.match(TYPE.SYMBOLS, '>>')) {
-                next();
-                asm_code.push(CMD.PUSH);
-                expression(lv('|'));
-                asm_code.push(CMD.SHR);
-                expr_type = VAR_TYPE.INT;
-            } else if(token.match(TYPE.SYMBOLS, '%')) {
-                next();
-                asm_code.push(CMD.PUSH);
-                expression(lv('%'));
-                asm_code.push(CMD.MOD);
+                expression(lv(token.value));
+                asm_code.push(current);
                 expr_type = VAR_TYPE.INT;
             } else if(token.match(TYPE.SYMBOLS, '++')) {
                 next();

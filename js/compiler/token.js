@@ -17,7 +17,8 @@ define(function() {
         'char else if int return sizeof while void for ' +
         // 支持的运算符     KEYS.slice(KEY_SPLIT)
         // 先长后短,这样匹配时先匹配长的
-        '++ -- || && == != <= >= << >> ' +
+        '<<= >>= ++ -- || && == != <= >= << >> ' +
+		'+= -= *= /= &= |= %= ' +
         '+ - | & ~ ! ^ ? : ; , * / % ( ) { } [ ] = > <'
     ).split(' ');
 
@@ -63,6 +64,9 @@ define(function() {
      */
     Token.prototype.match = function(type, value) {
         if(type == TYPE.SYMBOLS) {
+			if(Array.isArray(value)) {
+				return value.indexOf(this.value) != -1;
+			}
             return this.type == type && this.value == value;
         } else {
             return this.type == type;
