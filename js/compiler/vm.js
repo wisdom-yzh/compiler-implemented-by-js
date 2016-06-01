@@ -35,44 +35,49 @@ define(function() {
         IMM:  0,          // 立即数num赋给ax
         LC:   1,          // *ax -> ax, *ax is char
         LI:   2,          // *ax -> ax, *ax is int
-        SC:   3,          // ax值作为char存入某地址,地址存在栈顶
-        SI:   4,          // ax值作为int存入某地址,地址存在栈顶
-        PUSH: 5,          // ax值入栈
-        JMP:  6,          // ip跳转语句
-        JNZ:  7,          // ax != 0 时跳转
-        JZ:   8,          // ax == 0 时跳转
-        CALL: 9,          // 函数调用
-        ENT:  10,         // 函数参数进栈
-        ADJ:  11,         // sp += <num>
-        LEV:  12,         // 函数返回
-        LEA:  13,         // 参数所在stack偏移指针载入ax
-        OR:   14,         // |
-        AND:  15,         // &
-        XOR:  16,         // ^ 
-        EQ:   17,         // ==
-        NE:   18,         // !=
-        GT:   19,         // >
-        GE:   20,         // >=
-        LT:   21,         // <
-        LE:   22,         // <=
-        SHL:  23,         // <<
-        SHR:  24,         // >>
-        ADD:  25,         // +
-        SUB:  26,         // -
-        MUL:  27,         // *
-        DIV:  28,         // /
-        MOD:  29,         // %
-        PRIT: 30,         // print
-        EXIT: 31,         // exit
-        MALC: 32,         // malloc
+        LD:   3,          // *ax -> ax, *ax is double
+        SC:   4,          // ax值作为char存入某地址,地址存在栈顶
+        SI:   5,          // ax值作为int存入某地址,地址存在栈顶
+        SD:   6,          // ax值作为double存入某地址,地址存在栈顶
+        PUSH: 7,          // ax值入栈
+        POPI: 8,          // (int)stack[top] -> ax, pop(top), 仅用于类型转换
+        POPC: 9,          // (string)stack[top] -> ax, pop(top), 仅用于类型转换
+        POPD: 10,          // (double)stack[top] -> ax, pop(top), 仅用于类型转换
+        JMP:  11,          // ip跳转语句
+        JNZ:  12,          // ax != 0 时跳转
+        JZ:   13,         // ax == 0 时跳转
+        CALL: 14,         // 函数调用
+        ENT:  15,         // 函数参数进栈
+        ADJ:  16,         // sp += <num>
+        LEV:  17,         // 函数返回
+        LEA:  18,         // 参数所在stack偏移指针载入ax
+        OR:   19,         // |
+        AND:  20,         // &
+        XOR:  21,         // ^ 
+        EQ:   22,         // ==
+        NE:   23,         // !=
+        GT:   24,         // >
+        GE:   25,         // >=
+        LT:   26,         // <
+        LE:   27,         // <=
+        SHL:  28,         // <<
+        SHR:  29,         // >>
+        ADD:  30,         // +
+        SUB:  31,         // -
+        MUL:  32,         // *
+        DIV:  33,         // /
+        MOD:  34,         // %
+        PRIT: 35,         // print
+        EXIT: 36,         // exit
+        MALC: 37,         // malloc
     };
 
     // 指令字节数
     const CMD_BYTE = [
-        2, 1, 1, 1, 1, 1, 2, 2, 2, 2,
-        2, 2, 1, 2, 1, 1, 1, 1, 1, 1,
+        2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 
+        2, 2, 2, 2, 1, 2, 1, 1, 1, 1, 
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
-        1, 1, 1
+        1, 1, 1, 1, 1
     ];
 
     /**
@@ -81,7 +86,7 @@ define(function() {
      * @return int 1
      */
     function print(str) {
-        screen.value += str + '\n'
+        screen.value += str;
         screen.scrollTop = screen.scrollHeight;
         return 1;
     };
@@ -177,9 +182,14 @@ define(function() {
             if(op == CMD.IMM)       ax = code[ip++];
             else if(op == CMD.LC)   ax = String(memory[ax]);
             else if(op == CMD.LI)   ax = parseInt(memory[ax]);
+            else if(op == CMD.LD)   ax = parseFloat(memory[ax]);
             else if(op == CMD.SC)   memory[memory[sp++]] = String(ax);
             else if(op == CMD.SI)   memory[memory[sp++]] = parseInt(ax);
-            else if(op == CMD.PUSH) memory[--sp] = parseInt(ax);
+            else if(op == CMD.SD)   memory[memory[sp++]] = parseFloat(ax);
+            else if(op == CMD.POPC) ax = String(memory[sp++]);
+            else if(op == CMD.POPI) ax = parseInt(memory[sp++]);
+            else if(op == CMD.POPD) ax = parseFloat(memory[sp++]);
+            else if(op == CMD.PUSH) memory[--sp] = ax;
             else if(op == CMD.JMP)  ip = code[ip];
             else if(op == CMD.JNZ)  ip = !!ax ? code[ip] : ip + 1;
             else if(op == CMD.JZ)   ip = !ax ? code[ip] : ip + 1;
@@ -202,8 +212,8 @@ define(function() {
             else if(op == CMD.OR)   ax = memory[sp++] | ax;
             else if(op == CMD.AND)  ax = memory[sp++] & ax;
             else if(op == CMD.XOR)  ax = memory[sp++] ^ ax;
-            else if(op == CMD.EQ)   ax = memory[sp++] == ax ? 1 : 0;
-            else if(op == CMD.NE)   ax = memory[sp++] != ax ? 1 : 0;
+            else if(op == CMD.EQ)   ax = memory[sp++] === ax ? 1 : 0;
+            else if(op == CMD.NE)   ax = memory[sp++] !== ax ? 1 : 0;
             else if(op == CMD.GT)   ax = memory[sp++] > ax ? 1 : 0;
             else if(op == CMD.GE)   ax = memory[sp++] >= ax ? 1 : 0;
             else if(op == CMD.LT)   ax = memory[sp++] < ax ? 1 : 0;
@@ -222,7 +232,7 @@ define(function() {
                 ax = malloc(memory[sp]);
             }
             else if(op == CMD.EXIT) {
-                print('exit(' + memory[sp] + ')');
+                print('exit(' + memory[sp] + ')\n');
                 status = 0;
                 window.clearInterval(tick);
             }

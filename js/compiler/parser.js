@@ -5,7 +5,7 @@
 define(['token', 'vm'], function(tokenizer, vmachine) {
 
     /**
-     * 虚拟机汇编指vmachine令
+     * 虚拟机汇编指令
      */
     const CMD = vmachine.CMD;
 
@@ -33,15 +33,67 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
 
     /**
      * enum变量类型
-     * x % 2 == 0 --> int
-     * x % 2 != 0 --> char
-     * x / 2      --> '*'的个数
+     * x % 3 == 0 --> int
+     * x % 3 == 1 --> double
+     * x % 3 == 2 --> string
+     * x / 3      --> '*'的个数
      */
     const VAR_TYPE = {
+        VOID: -1, // 当前只有函数能有void类型,暂不兹茨void *
         INT:  0,
-        CHAR: 1,
-        PTR:  2
+        DOUBLE: 1,
+        STRING: 2,
+        PTR:  3
     };
+
+    /**
+     * 判断数据类型 
+     */
+    function is_string(argument) {
+        return argument % 3 == VAR_TYPE.STRING;
+    }
+    function is_int(argument) {
+        return argument % 3 == VAR_TYPE.INT;
+    }
+    function is_double(argument) {
+        return argument % 3 == VAR_TYPE.DOUBLE;
+    }
+    function is_ptr(argument) {
+        return argument >= 3;
+    }
+
+    /**
+     * 根据数据类型进行对应的SAVE/LOAD操作
+     */
+    function save(var_type) {
+        if(is_int(var_type) || is_ptr(var_type)) {
+            asm_code.push(CMD.SI);
+        } else if(is_string(var_type)) {
+            asm_code.push(CMD.SC);
+        } else {
+            asm_code.push(CMD.SD);
+        }
+    }
+
+    function load(var_type) {
+        if(is_int(var_type) || is_ptr(var_type)) {
+            asm_code.push(CMD.LI);
+        } else if(is_string(var_type)) {
+            asm_code.push(CMD.LC);
+        } else {
+            asm_code.push(CMD.LD);
+        }
+    }
+
+    function pop(var_type) {
+        if(is_int(var_type) || is_ptr(var_type)) {
+            asm_code.push(CMD.POPI);
+        } else if(is_string(var_type)) {
+            asm_code.push(CMD.POPC);
+        } else {
+            asm_code.push(CMD.POPD);
+        }
+    }
 
     /**
      * 当前表达式返回变量类型
@@ -64,8 +116,10 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
         var var_type = VAR_TYPE.INT;
         if(token.match(TYPE.SYMBOLS ,'int')) {
             var_type = VAR_TYPE.INT;
-        } else if(token.match(TYPE.SYMBOLS, 'char')) {
-            var_type = VAR_TYPE.CHAR;
+        } else if(token.match(TYPE.SYMBOLS, 'string')) {
+            var_type = VAR_TYPE.STRING;
+        } else if(token.match(TYPE.SYMBOLS, ['double', 'float'])) {
+            var_type = VAR_TYPE.DOUBLE;
         } else {
             throw_exception('error to get type of variable');
         }
@@ -100,12 +154,14 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
             // 全局变量赋初值
             if(token.match(TYPE.SYMBOLS, '=')) {
                 next();
-                if(token.match(TYPE.NUMBER) && var_type % 2 == 0) {
-                    asm_data[asm_data.length - 1] = parseInt(token.value);
-                } else if(token.match(TYPE.STRING && var_type % 2 == 1)) {
-                    asm_data[asm_data.length - 1] = token.value;
-                } else {
-                    throw_exception('全局变量初值赋值错误');
+                if(token.match(TYPE.NUMBER) || token.match(TYPE.STRING)) {
+                    if(is_ptr(var_type) || is_int(var_type)){ // 指针或者整数
+                        asm_data[asm_data.length - 1] = parseInt(token.value);
+                    } else {
+                        asm_data[asm_data.length - 1] = token.value;
+                    }
+                } else { // 全局变量赋值不兹茨运算
+                    throw_exception('非法赋值!');
                 }
                 next();
             }
@@ -173,19 +229,19 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
      */
     function func_body_decl() {
         var pos_local = index_bp; // 内部变量所在栈段地址
-        // 局部变量定义,变量个数x暂时未知,先暂存起来: ENT x
+        // 局部变量定义,变量个数x暂时未知,先暂存起来: ENT ?
         asm_code.push(CMD.ENT);
         var p = asm_code.length;
-        asm_code.push(0);
-        while(token.match(TYPE.SYMBOLS, 'char') || token.match(TYPE.SYMBOLS, 'int')) {
-            // 获得基础数据类型(int or char)
+        asm_code.push('?');
+        while(token.match(TYPE.SYMBOLS, ['string', 'int', 'double', 'float'])) {
+            // 获得基础数据类型
             var base_type = VAR_TYPE.INT;
             if(token.match(TYPE.SYMBOLS ,'int')) {
                 base_type = VAR_TYPE.INT;
-            } else if(token.match(TYPE.SYMBOLS, 'char')) {
-                base_type = VAR_TYPE.CHAR;
+            } else if(token.match(TYPE.SYMBOLS, 'string')) {
+                base_type = VAR_TYPE.STRING;
             } else {
-                throw_exception('error to get type of variable');
+                base_type = VAR_TYPE.DOUBLE;
             }
             next();
             // 获得变量名称及初始化类型
@@ -213,7 +269,7 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
                     asm_code.push(index_bp - pos_local); // 局部变量的偏移地址
                     asm_code.push(CMD.PUSH);
                     expression(lv('='));
-                    asm_code.push(var_type % 2 == 0 ? CMD.SI : CMD.SC);
+                    save(var_type);
                 }
                 // 跳过 , 
                 if(token.match(TYPE.SYMBOLS, ',')) {
@@ -227,19 +283,22 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
         while(!token.match(TYPE.SYMBOLS, '}')) {
             statement();
         }
+        // 函数末尾加上LEV自动退出
+        asm_code.push(CMD.LEV);
         // 退出后清空局部变量
         local_list = {};
     }
 
     /**
-     * 7种语句类型
+     * 8种语句类型
      * 1) if(...) <statement> [else <statement>]
      * 2) while(...) <statement>
      * 3) for(<statement> <statement> <statement>) <statement>
      * 4) { <statement> }
      * 5) return xxx;
-     * 6) <empty statement>;
-     * 7) expression; (expression end with semicolon)
+     * 6) break;/continue; 存为'break'和'continue'交给上一级的for/while处理
+     * 7) <empty statement>;
+     * 8) expression; (expression end with semicolon)
      */
     function statement() {
         if(token.match(TYPE.SYMBOLS, 'if')) { // if语句
@@ -251,9 +310,14 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
         } else if(token.match(TYPE.SYMBOLS, 'for')) {
             next();
             statement_for();
-        } else if(token.match(TYPE.SYMBOLS, 'return')) {
+        } else if(token.match(TYPE.SYMBOLS, 'return')) { 
             next();
             statement_return();
+        } else if(token.match(TYPE.SYMBOLS, ['break', 'continue'])) {
+            asm_code.push(CMD.JMP);
+            asm_code.push(token.value);
+            next();
+            token.match(TYPE.SYMBOLS, ';') ? next() : throw_exception();
         } else if(token.match(TYPE.SYMBOLS, '{')) {
             next();
             while(!token.match(TYPE.SYMBOLS, '}')) {
@@ -315,16 +379,25 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
     function statement_while() {
         var a = asm_code.length;
         token.match(TYPE.SYMBOLS, '(') ? next() : throw_exception();
-        expression(0);
+        expression(lv('='));
         token.match(TYPE.SYMBOLS, ')') ? next() : throw_exception();
         
         asm_code.push(CMD.JZ);
         var b = asm_code.length;
-        asm_code.push(0);
-        statement();
+        asm_code.push('?');
+        statement(); // loop
         asm_code.push(CMD.JMP);
         asm_code.push(a);
         asm_code[b] = asm_code.length;
+
+        // 寻找循环体内的break和continue,替换成跳转到的位置
+        for(var p = b; p < asm_code.length; ip++) {
+            if(asm_code[ip] == 'break') {
+                asm_code[ip] = asm_code.length;
+            } else if(asm_code[ip] == 'continue') {
+                asm_code[ip] = a;
+            }
+        }
     }
 
     /**
@@ -342,19 +415,19 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
      */
     function statement_for() {
         token.match(TYPE.SYMBOLS, '(') ? next() : throw_exception();
-        expression(0); // expr1
+        expression(lv('=')); // expr1
         token.match(TYPE.SYMBOLS, ';') ? next() : throw_exception();
         var a = asm_code.length;
-        expression(0); // expr2
+        expression(lv('=')); // expr2
         asm_code.push(CMD.JZ);
         var p1 = asm_code.length;
-        asm_code.push(0);
+        asm_code.push('?');
         asm_code.push(CMD.JMP);
         var p2 = asm_code.length;
-        asm_code.push(0);
+        asm_code.push('?');
         token.match(TYPE.SYMBOLS, ';') ? next() : throw_exception();
         var d = asm_code.length;
-        expression(0); // expr3
+        expression(lv('=')); // expr3
         asm_code.push(CMD.JMP);
         asm_code.push(a);
         token.match(TYPE.SYMBOLS, ')') ? next() : throw_exception();
@@ -365,6 +438,15 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
         var b = asm_code.length;
         asm_code[p1] = b;
         asm_code[p2] = c;
+
+        // 寻找循环体内的break和continue,替换成跳转到的位置
+        for(var p = c; p < b; p++) {
+            if(asm_code[p] == 'break') {
+                asm_code[p] = b;
+            } else if(asm_code[p] == 'continue') {
+                asm_code[p] = d;
+            }
+        }
     }
 
     /**
@@ -372,7 +454,7 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
      */
     function statement_return() {
         if(!token.match(TYPE.SYMBOLS, ';')) {
-            expression(0);
+            expression(lv('='));
         }
         token.match(TYPE.SYMBOLS, ';') ? next() : throw_exception();
         asm_code.push(CMD.LEV);
@@ -385,18 +467,19 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
     function expression(level) {
         // 匹配第一个字符
         if(!token || token.match(TYPE.ILLEGAL)) {
-            throw_exception();
+            throw_exception('非法字符!');
         } else if(token.match(TYPE.NUMBER)) {
             asm_code.push(CMD.IMM);
             asm_code.push(token.value);
-            expr_type = VAR_TYPE.INT;
+            expr_type = VAR_TYPE.DOUBLE;
             next();
         } else if(token.match(TYPE.STRING)) {
             var pos = asm_data.length;
             asm_data.push(token.value);
             asm_code.push(CMD.IMM);
             asm_code.push(pos);
-            expr_type = VAR_TYPE.CHAR + VAR_TYPE.PTR;
+            asm_code.push(CMD.LC);
+            expr_type = VAR_TYPE.STRING;
             next();
         } else if(token.match(TYPE.SYMBOLS, 'sizeof')) {
             // js模拟的虚拟机中所有类型都只有一个单位
@@ -415,13 +498,13 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
                 asm_code.push(CMD.IMM);
                 asm_code.push(variable_list[token.value].var_addr);
                 expr_type = variable_list[token.value].var_type;
-                asm_code.push(expr_type == VAR_TYPE.INT ? CMD.LI : CMD.LC);
+                load(expr_type);
                 next();
             } else if(Object.keys(local_list).indexOf(token.value) != -1) {
                 asm_code.push(CMD.LEA);
                 asm_code.push(index_bp - local_list[token.value].var_addr);
                 expr_type = local_list[token.value].var_type;
-                asm_code.push(expr_type == VAR_TYPE.INT ? CMD.LI : CMD.LC);
+                load(expr_type); 
                 next();
             } else if(Object.keys(function_list).indexOf(token.value) != -1 ||
                       tokenizer.FUNCS.indexOf(token.value) != -1) {
@@ -457,21 +540,17 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
             } else {
                 throw_exception();
             }
-        } else if(token.match(TYPE.NUMBER)) {
-            // 立即数
-            next();
-            asm_code.push(CMD.IMM);
-            asm_code.push(token.value);
-            expr_type = VAR_TYPE.INT;
         } else if(token.match(TYPE.SYMBOLS, '(')) {
             // 左括号
             next();
-            if(token.match(TYPE.SYMBOLS, 'int') ||
-               token.match(TYPE.SYMBOLS, 'char')) {
-                // 强制类型转换
+            if(token.match(TYPE.SYMBOLS, ['int', 'string', 'float', 'double'])) {
+                // 强制类型转换, 只有为string时LC,其他都是LI(包括string *)
                 var cast_type = get_type();
                 token.match(TYPE.SYMBOLS, ')') ? next() : throw_exception();
                 expression(lv('++'));
+                asm_code.push(CMD.PUSH);
+                pop(cast_type);
+                expr_type = cast_type; 
             } else {
                 // 普通的左括号
                 expression(0);
@@ -484,12 +563,12 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
             if(expr_type >= VAR_TYPE.PTR) {
                 expr_type -= VAR_TYPE.PTR;
             }
-            asm_code.push(expr_type == VAR_TYPE.CHAR ? CMD.LC : CMD.LI);
+            load(expr_type);
         } else if(token.match(TYPE.SYMBOLS, '&')) {
             // 取地址
             next();
             expression(lv('single'));
-            if([CMD.LI, CMD.LC].indexOf(asm_code[asm_code.length - 1]) != -1) {
+            if([CMD.LI, CMD.LC, CMD.LD].indexOf(asm_code[asm_code.length - 1]) != -1) {
                 asm_code.pop();
             } else {
                 throw_exception();
@@ -530,39 +609,35 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
             // ++在变量前面,加x=x+1并且返回x+1
             next();
             expression(lv('single'));
-            if(asm_code[asm_code.length - 1] == CMD.LI) {
-                asm_code[asm_code.length - 1] = CMD.PUSH;
-                asm_code.push(CMD.LI);
-            } else if(asm_code[asm_code.length - 1] == CMD.LC) {
-                asm_code[asm_code.length - 1] = CMD.PUSH;
-                asm_code.push(CMD.LC);
+            var opt = asm_code[asm_code.length - 1];
+            if([CMD.LI, CMD.LC, CMD.LD].indexOf(opt) == -1) {
+                throw_exception('++前必须是变量');
             } else {
-                throw_exception();
+                asm_code[asm_code.length - 1] = CMD.PUSH;
+                asm_code.push(opt);
             }
             asm_code.push(CMD.PUSH);
             asm_code.push(CMD.IMM);
             asm_code.push(1);
             asm_code.push(CMD.ADD);
-            asm_code.push(expr_type == VAR_TYPE.CHAR ? CMD.SC : CMD.SI);
+            save(expr_type);
             expr_type = VAR_TYPE.INT;
         } else if(token.match(TYPE.SYMBOLS, '--')) {
             // --在变量前面
             next();
             expression(lv('single'));
-            if(asm_code[asm_code.length - 1] == CMD.LI) {
-                asm_code[asm_code.length - 1] = CMD.PUSH;
-                asm_code.push(CMD.LI);
-            } else if(asm_code[asm_code.length - 1] == CMD.LC) {
-                asm_code[asm_code.length - 1] = CMD.PUSH;
-                asm_code.push(CMD.LC);
+            var opt = asm_code[asm_code.length - 1];
+            if([CMD.LI, CMD.LC, CMD.LD].indexOf(opt) == -1) {
+                throw_exception('--前必须是变量');
             } else {
-                throw_exception();
+                asm_code[asm_code.length - 1] = CMD.PUSH;
+                asm_code.push(opt);
             }
             asm_code.push(CMD.PUSH);
             asm_code.push(CMD.IMM);
             asm_code.push(1);
             asm_code.push(CMD.SUB);
-            asm_code.push(expr_type == VAR_TYPE.CHAR ? CMD.SC : CMD.SI);
+            save(expr_type);
             expr_type = VAR_TYPE.INT;
         } else {
             throw_exception();
@@ -582,7 +657,7 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
                 }
                 expression(lv('='));
                 expr_type = tmp_expr_type;
-                asm_code.push(expr_type == VAR_TYPE.CHAR ? CMD.SC : CMD.SI);
+                save(expr_type);
             } else if(token.match(TYPE.SYMBOLS, 
 				['+=', '-=', '*=', '/=', '&=', '|=', '%=', '<<=', '>>='])) {
 				// 运算后赋值
@@ -602,10 +677,10 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
                 }
                 expression(lv('='));
                 if(expr_type != tmp_expr_type) {
-					throw_exception();
+					throw_exception('运算符两侧变量类型不同!');
 				}
 				asm_code.push(current);
-                asm_code.push(expr_type == VAR_TYPE.CHAR ? CMD.SC : CMD.SI);
+                save(expr_type);
 			} else if(token.match(TYPE.SYMBOLS, '?')) {
                 // <condition> ? <true_statement> : <false_statement>
                 next();
@@ -659,20 +734,18 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
             } else if(token.match(TYPE.SYMBOLS, '++')) {
                 next();
                 // 后缀形式的自增,在前缀自增的基础上再返回x-1
-                if(asm_code[asm_code.length - 1] == CMD.LI) {
-                    asm_code[asm_code.length - 1] = CMD.PUSH;
-                    asm_code.push(CMD.LI);
-                } else if(asm_code[asm_code.length - 1] == CMD.LC) {
-                    asm_code[asm_code.length - 1] = CMD.PUSH;
-                    asm_code.push(CMD.LC);
+                var opt = asm_code[asm_code.length - 1];
+                if([CMD.LI, CMD.LC, CMD.LD].indexOf(opt) == -1) {
+                    throw_exception('++前必须是变量');
                 } else {
-                    throw_exception();
+                    asm_code[asm_code.length - 1] = CMD.PUSH;
+                    asm_code.push(opt);
                 }
                 asm_code.push(CMD.PUSH);
                 asm_code.push(CMD.IMM);
                 asm_code.push(1);
                 asm_code.push(CMD.ADD);
-                asm_code.push(expr_type == VAR_TYPE.CHAR ? CMD.SC : CMD.SI);
+                save(expr_type);
                 asm_code.push(CMD.PUSH);
                 asm_code.push(CMD.IMM);
                 asm_code.push(1);
@@ -681,20 +754,18 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
             } else if(token.match(TYPE.SYMBOLS, '--')) {
                 next();
                 // 后缀形式的自减
-                if(asm_code[asm_code.length - 1] == CMD.LI) {
-                    asm_code[asm_code.length - 1] = CMD.PUSH;
-                    asm_code.push(CMD.LI);
-                } else if(asm_code[asm_code.length - 1] == CMD.LC) {
-                    asm_code[asm_code.length - 1] = CMD.PUSH;
-                    asm_code.push(CMD.LC);
+                var opt = asm_code[asm_code.length - 1];
+                if([CMD.LI, CMD.LC, CMD.LD].indexOf(opt) == -1) {
+                    throw_exception('++前必须是变量');
                 } else {
-                    throw_exception();
+                    asm_code[asm_code.length - 1] = CMD.PUSH;
+                    asm_code.push(opt);
                 }
                 asm_code.push(CMD.PUSH);
                 asm_code.push(CMD.IMM);
                 asm_code.push(1);
                 asm_code.push(CMD.SUB);
-                asm_code.push(expr_type == VAR_TYPE.CHAR ? CMD.SC : CMD.SI);
+                save(expr_type);
                 asm_code.push(CMD.PUSH);
                 asm_code.push(CMD.IMM);
                 asm_code.push(1);
@@ -710,7 +781,7 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
                 expression(0);
                 token.match(TYPE.SYMBOLS, ']') ? next() : throw_exception();
                 asm_code.push(CMD.ADD);
-                asm_code.push(expr_type % 2 == 0 ? CMD.LI : CMD.LC);
+                load(expr_type);
                 expr_type -= tmp_expr_type - VAR_TYPE.PTR;
             } else if(token.match(TYPE.SYMBOLS, ';') || 
                       token.match(TYPE.SYMBOLS, ')') ||

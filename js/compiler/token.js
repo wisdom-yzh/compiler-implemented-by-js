@@ -14,7 +14,8 @@ define(function() {
      */
     var KEYS = (
         // 关键词           KEYS.slice(0, KEY_SPLIT)
-        'char else if int return sizeof while void for ' +
+        'string else if int return sizeof ' +
+        'while void for break continue float double ' +
         // 支持的运算符     KEYS.slice(KEY_SPLIT)
         // 先长后短,这样匹配时先匹配长的
         '<<= >>= ++ -- || && == != <= >= << >> ' +
@@ -28,7 +29,7 @@ define(function() {
      * 系统自带函数
      */
     var FUNCS = (
-        'print malloc exit'
+        'print malloc exit rand'
     ).split(' ');
 
     /**
@@ -142,11 +143,11 @@ define(function() {
                     pos += (var_match[0].length - 1);
                     col += (var_match[0].length - 1);
                 }
-            } else if(current >= '0' && current <= '9') {
+            } else if(current >= '0' && current <= '9' || current == '.') {
                 // 匹配数字常量 ps:总能匹配到
                 var sub_expr = expr.substring(pos - 1);
-                var num_match = /^\d+/.exec(sub_expr);
-                add_token(TYPE.NUMBER, parseInt(num_match[0]), line, col); 
+                var num_match = /^[\d\.]+/.exec(sub_expr);
+                add_token(TYPE.NUMBER, parseFloat(num_match[0]), line, col); 
                 pos += (num_match[0].length - 1);
                 col += (num_match[0].length - 1);
             } else if(current == '"') {

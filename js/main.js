@@ -14,7 +14,7 @@ require(['jquery', 'compiler'], function($, compiler) {
     $('#run')
     .bind('click', function() {
         var source = $('#source').val();
-        window.localStorage.source = source;
+        window.localStorage.setItem('source', source);
         compiler.go(source, $('#result')[0], true);
     });
 

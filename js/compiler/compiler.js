@@ -32,7 +32,10 @@ define(['parser', 'token', 'vm'], function(parser, tokenizer, vmachine) {
         var src = input_source + '\0';
         var token_list = tokenizer.tokenizer(src);
         if(debug) {
-            console.log(token_list);
+            console.info('TOKEN LIST');
+            token_list.forEach(function(row) {
+                console.log(row.value);
+            });
         }
             
         var asm;
@@ -44,16 +47,17 @@ define(['parser', 'token', 'vm'], function(parser, tokenizer, vmachine) {
         }
 
         if(debug) {
-            var asm_decode = []; 
-            var cmd_reflect = array_flip(vmachine.CMD);
+            var cmd_reflect = array_flip(vmachine.CMD), 
+                line;
+            console.info('ASM CODE');
             for(var i = 0; i < asm['code'].length; i++) {
-                asm_decode.push(cmd_reflect[asm['code'][i]] || 'undefined');
+                line = i + '\t';
+                line += ' | ' + cmd_reflect[asm['code'][i]] || 'UNKNOWN!';
                 if(vmachine.CMD_BYTE[asm['code'][i]] == 2) {
-                    asm_decode.push(asm['code'][++i]);
+                    line += ' ' + asm['code'][++i];
                 }
+                console.log(line);
             }
-            console.log(asm['code']);
-            console.log(asm_decode);
         }
 
         vm = new vmachine.vm(output_device);
