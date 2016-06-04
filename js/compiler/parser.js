@@ -725,10 +725,11 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
 					'>=': CMD.GE, '<=': CMD.LE, '>': CMD.GT, '<': CMD.LT,
 					'<<': CMD.SHL, '>>': CMD.SHR
 				};
-				current = opt[token.value];
+				var current = opt[token.value],
+					current_lv = lv(token.value);
                 next();
                 asm_code.push(CMD.PUSH);
-                expression(lv(token.value));
+                expression(current_lv);
                 asm_code.push(current);
                 expr_type = VAR_TYPE.INT;
             } else if(token.match(TYPE.SYMBOLS, '++')) {
