@@ -391,11 +391,11 @@ define(['token', 'vm'], function(tokenizer, vmachine) {
         asm_code[b] = asm_code.length;
 
         // 寻找循环体内的break和continue,替换成跳转到的位置
-        for(var p = b; p < asm_code.length; ip++) {
-            if(asm_code[ip] == 'break') {
-                asm_code[ip] = asm_code.length;
-            } else if(asm_code[ip] == 'continue') {
-                asm_code[ip] = a;
+        for(var p = b; p < asm_code.length; p++) {
+            if(asm_code[p] == 'break') {
+                asm_code[p] = asm_code.length;
+            } else if(asm_code[p] == 'continue') {
+                asm_code[p] = a;
             }
         }
     }

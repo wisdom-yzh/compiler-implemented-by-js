@@ -15,13 +15,15 @@ define(function() {
     // +-------+
     var code,             // 代码段
         memory;           // 数据存储区
-
  
     // 模拟环境
     var status,           // 是否正在运行
         tick,             // 一个指令运行周期
         cycle,            // 当前运行周期
         screen;           // 输出屏幕
+
+	// 执行指令的worker线程
+	var worker;
 
     // 寄存器
     var ax,               // 通用寄存器
@@ -42,9 +44,9 @@ define(function() {
         PUSH: 7,          // ax值入栈
         POPI: 8,          // (int)stack[top] -> ax, pop(top), 仅用于类型转换
         POPC: 9,          // (string)stack[top] -> ax, pop(top), 仅用于类型转换
-        POPD: 10,          // (double)stack[top] -> ax, pop(top), 仅用于类型转换
-        JMP:  11,          // ip跳转语句
-        JNZ:  12,          // ax != 0 时跳转
+        POPD: 10,         // (double)stack[top] -> ax, pop(top), 仅用于类型转换
+        JMP:  11,         // ip跳转语句
+        JNZ:  12,         // ax != 0 时跳转
         JZ:   13,         // ax == 0 时跳转
         CALL: 14,         // 函数调用
         ENT:  15,         // 函数参数进栈
@@ -80,31 +82,61 @@ define(function() {
         1, 1, 1, 1, 1
     ];
 
-    /**
-     * 实现打印字符的功能
-     * @param String str 输出的字符
-     * @return int 1
-     */
-    function print(str) {
-        screen.value += str;
-        screen.scrollTop = screen.scrollHeight;
-        return 1;
-    };
+	/**
+	 * 实现打印字符的功能
+	 * @param String str 输出的字符
+	 * @return int 1
+	 */
+	function print(str) {
+		screen.value += str;
+		screen.scrollTop = screen.scrollHeight;
+		return 1;
+	};
 
-    /**
-     * 实现堆区动态内存分配
-     * @param int size 分配的内存大小
-     * @return int address of 0
-     */
-    function malloc(size) {
-        if(size <= 0) {
-            return 0;
-        }
-        for(var i in size) {
-            memory.push(0);
-        }
-        return memory.length;
-    }
+	/**
+	 * 实现堆区动态内存分配
+	 * @param int size 分配的内存大小
+	 * @return int address of 0
+	 */
+	function malloc(size) {
+		if(size <= 0) {
+			return 0;
+		}
+		for(var i in size) {
+			memory.push(0);
+		}
+		return memory.length;
+	}
+
+	/**
+	 * 内存释放
+	 * @param int addr 地址
+	 */
+	function free(addr) {
+		delete memory[addr];
+		return 1;
+	}
+
+	/**
+	 * 退出exit
+	 */
+	function exit() {
+		print('exit(' + memory[sp] + ')\n');
+		status = 0;
+		window.clearInterval(tick);
+	}
+
+	/**
+	 * 初始化Worker各个参数及回调
+	 */
+	function initWorker(ds_size, ss_size) {
+		worker.postMessage({
+			cmd: 'init',
+			CMD: CMD,
+			ds_size: ds_size,
+			ss_size: ss_size
+		});
+	}
 
     /**
      * constructor
@@ -118,7 +150,25 @@ define(function() {
         ss_size = ss_size || 512;
         memory = new Array(ds_size + ss_size);
         screen = dom_screen;
-    };
+		if(!window.Worker)  {
+			alert('你的浏览器不资瓷Worker,只能用setTimeout了');
+		} else {
+			worker = new window.Worker('js/compiler/thread.js');
+			worker.onmessage = function(event) {
+				var data = event.data;
+				switch(data.cmd) {
+					case 'print':
+						print(data.data);
+						break;
+					case 'core_dump':
+						console.log(data.data);
+				}
+			}
+		}
+		if(worker) {
+			initWorker(ds_size, ss_size);
+		}
+    }
 
     /**
      * 执行汇编代码
@@ -126,6 +176,13 @@ define(function() {
      * @return int eval()
      */
     vm.prototype.run = function(asm) {
+		if(worker) {
+			worker.postMessage({
+				cmd: 'run',
+				asm: asm
+			});
+			return;
+		}
         if(status) {
             return false;
         }
@@ -149,6 +206,12 @@ define(function() {
      * @param bool core_dump 是否输出
      */
     vm.prototype.terminate = function(core_dump) {
+		if(worker) {
+			worker.terminate();
+			delete worker;
+			print('aborted!\n');
+			return true;
+		}
         if(!status) {
             return false;
         }
@@ -174,71 +237,75 @@ define(function() {
      * @return int
      */
     vm.prototype.eval = function() {
-        tick = window.setInterval(function() {
-            // 读取指令
-            op = code[ip++];
-            cycle++;
-            // 执行操作
-            if(op == CMD.IMM)       ax = code[ip++];
-            else if(op == CMD.LC)   ax = String(memory[ax]);
-            else if(op == CMD.LI)   ax = parseInt(memory[ax]);
-            else if(op == CMD.LD)   ax = parseFloat(memory[ax]);
-            else if(op == CMD.SC)   memory[memory[sp++]] = String(ax);
-            else if(op == CMD.SI)   memory[memory[sp++]] = parseInt(ax);
-            else if(op == CMD.SD)   memory[memory[sp++]] = parseFloat(ax);
-            else if(op == CMD.POPC) ax = String(memory[sp++]);
-            else if(op == CMD.POPI) ax = parseInt(memory[sp++]);
-            else if(op == CMD.POPD) ax = parseFloat(memory[sp++]);
-            else if(op == CMD.PUSH) memory[--sp] = ax;
-            else if(op == CMD.JMP)  ip = code[ip];
-            else if(op == CMD.JNZ)  ip = !!ax ? code[ip] : ip + 1;
-            else if(op == CMD.JZ)   ip = !ax ? code[ip] : ip + 1;
-            else if(op == CMD.CALL) {
-                memory[--sp] = ip + 1;
-                ip = code[ip];
-            }
-            else if(op == CMD.ENT) {
-                memory[--sp] = bp;    // 父函数bp寄存器存入栈
-                bp = sp;
-                sp = sp - code[ip++]; // 载入局部变量
-            }
-            else if(op == CMD.LEV) {
-                sp = bp;
-                bp = memory[sp++];
-                ip = memory[sp++];
-            }
-            else if(op == CMD.ADJ)  sp = sp + code[ip++];
-            else if(op == CMD.LEA)  ax = bp + code[ip++];
-            else if(op == CMD.OR)   ax = memory[sp++] | ax;
-            else if(op == CMD.AND)  ax = memory[sp++] & ax;
-            else if(op == CMD.XOR)  ax = memory[sp++] ^ ax;
-            else if(op == CMD.EQ)   ax = memory[sp++] === ax ? 1 : 0;
-            else if(op == CMD.NE)   ax = memory[sp++] !== ax ? 1 : 0;
-            else if(op == CMD.GT)   ax = memory[sp++] > ax ? 1 : 0;
-            else if(op == CMD.GE)   ax = memory[sp++] >= ax ? 1 : 0;
-            else if(op == CMD.LT)   ax = memory[sp++] < ax ? 1 : 0;
-            else if(op == CMD.LE)   ax = memory[sp++] <= ax ? 1 : 0;
-            else if(op == CMD.SHL)  ax = memory[sp++] << ax;
-            else if(op == CMD.SHR)  ax = memory[sp++] >> ax;
-            else if(op == CMD.ADD)  ax = memory[sp++] + ax;
-            else if(op == CMD.SUB)  ax = memory[sp++] - ax;
-            else if(op == CMD.MUL)  ax = memory[sp++] * ax;
-            else if(op == CMD.DIV)  ax = memory[sp++] / ax;
-            else if(op == CMD.MOD)  ax = memory[sp++] % ax;
-            else if(op == CMD.PRIT) {
-                ax = print(memory[sp]);
-            }
-            else if(op == CMD.MALC) {
-                ax = malloc(memory[sp]);
-            }
-            else if(op == CMD.EXIT) {
-                print('exit(' + memory[sp] + ')\n');
-                status = 0;
-                window.clearInterval(tick);
-            }
-        }, 0);
+        tick = window.setInterval(step, 0);
         return true;
     };
+
+	/**
+	 * 一个单步执行指令
+	 * @return void
+	 */
+	function step() {
+		// 读取指令
+		op = code[ip++];
+		cycle++;
+		// 执行操作
+		if(op == CMD.IMM)       ax = code[ip++];
+		else if(op == CMD.LC)   ax = String(memory[ax]);
+		else if(op == CMD.LI)   ax = parseInt(memory[ax]);
+		else if(op == CMD.LD)   ax = parseFloat(memory[ax]);
+		else if(op == CMD.SC)   memory[memory[sp++]] = String(ax);
+		else if(op == CMD.SI)   memory[memory[sp++]] = parseInt(ax);
+		else if(op == CMD.SD)   memory[memory[sp++]] = parseFloat(ax);
+		else if(op == CMD.POPC) ax = String(memory[sp++]);
+		else if(op == CMD.POPI) ax = parseInt(memory[sp++]);
+		else if(op == CMD.POPD) ax = parseFloat(memory[sp++]);
+		else if(op == CMD.PUSH) memory[--sp] = ax;
+		else if(op == CMD.JMP)  ip = code[ip];
+		else if(op == CMD.JNZ)  ip = !!ax ? code[ip] : ip + 1;
+		else if(op == CMD.JZ)   ip = !ax ? code[ip] : ip + 1;
+		else if(op == CMD.CALL) {
+			memory[--sp] = ip + 1;
+			ip = code[ip];
+		}
+		else if(op == CMD.ENT) {
+			memory[--sp] = bp;    // 父函数bp寄存器存入栈
+			bp = sp;
+			sp = sp - code[ip++]; // 载入局部变量
+		}
+		else if(op == CMD.LEV) {
+			sp = bp;
+			bp = memory[sp++];
+			ip = memory[sp++];
+		}
+		else if(op == CMD.ADJ)  sp = sp + code[ip++];
+		else if(op == CMD.LEA)  ax = bp + code[ip++];
+		else if(op == CMD.OR)   ax = memory[sp++] | ax;
+		else if(op == CMD.AND)  ax = memory[sp++] & ax;
+		else if(op == CMD.XOR)  ax = memory[sp++] ^ ax;
+		else if(op == CMD.EQ)   ax = memory[sp++] === ax ? 1 : 0;
+		else if(op == CMD.NE)   ax = memory[sp++] !== ax ? 1 : 0;
+		else if(op == CMD.GT)   ax = memory[sp++] > ax ? 1 : 0;
+		else if(op == CMD.GE)   ax = memory[sp++] >= ax ? 1 : 0;
+		else if(op == CMD.LT)   ax = memory[sp++] < ax ? 1 : 0;
+		else if(op == CMD.LE)   ax = memory[sp++] <= ax ? 1 : 0;
+		else if(op == CMD.SHL)  ax = memory[sp++] << ax;
+		else if(op == CMD.SHR)  ax = memory[sp++] >> ax;
+		else if(op == CMD.ADD)  ax = memory[sp++] + ax;
+		else if(op == CMD.SUB)  ax = memory[sp++] - ax;
+		else if(op == CMD.MUL)  ax = memory[sp++] * ax;
+		else if(op == CMD.DIV)  ax = memory[sp++] / ax;
+		else if(op == CMD.MOD)  ax = memory[sp++] % ax;
+		else if(op == CMD.PRIT) {
+			ax = print(memory[sp]);
+		}
+		else if(op == CMD.MALC) {
+			ax = malloc(memory[sp]);
+		}
+		else if(op == CMD.EXIT) {
+			exit();
+		}
+	}
 
     return {
         vm: vm,
