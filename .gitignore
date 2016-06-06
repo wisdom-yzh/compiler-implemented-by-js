@@ -1,0 +1,5 @@
+*.swp
+ctags
+cscope.out
+.tern-project
+*.c
