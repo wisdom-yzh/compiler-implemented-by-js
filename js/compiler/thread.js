@@ -9,17 +9,6 @@ var malloc, free, step, CMD;
 // TODO: 把vm.js中相关函数和这里的合并起来!
 
 /**
- * 实现打印字符的功能
- * @param String str 输出的字符
- * @return int 1
- */
-function print(str) {
-	screen.value += str;
-	screen.scrollTop = screen.scrollHeight;
-	return 1;
-};
-
-/**
  * 实现堆区动态内存分配
  * @param int size 分配的内存大小
  * @return int address of 0
@@ -122,6 +111,7 @@ function print(str) {
 function exit() {
 	print('exit(' + ax + ')\n');
 	status = 0;
+	close();
 }
 
 function terminate(core_dump) {
@@ -155,7 +145,7 @@ function run(asm) {
 	// 标记状态
 	cycle = 0;
 	status = 1;
-	while(status && cycle < 20000) {
+	while(status) {
 		step();
 	}
 }

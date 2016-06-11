@@ -1,35 +1,24 @@
-require.config({
-    baseUrl: 'js',
-    paths: {
-        compiler: 'compiler/compiler',
-        token:    'compiler/token',
-        vm:       'compiler/vm',
-        parser:   'compiler/parser',
-        jquery:   'jquery.min'
-    }
-});
+var compiler = require('./compiler/compiler.js');
 
-require(['jquery', 'compiler'], function($, compiler) {
-    
-    $('#run')
-    .bind('click', function() {
-        var source = $('#source').val();
-        window.localStorage.setItem('source', source);
-        compiler.go(source, $('#result')[0], true);
-    });
+$(function() {
 
-    $('#terminate')
-    .bind('click', function() {
-        var core_dump = compiler.terminate(true);
-        console.log(core_dump);
-    });
+	$('#run').bind('click', function() {
+		var source = $('#source').val();
+		window.localStorage.setItem('source', source);
+		compiler.go(source, $('#result')[0], true);
+	});
 
-    $('#source')
-    .bind('keydown', function(e) {
-        if(e.keyCode == 9) {
-            $(this).val($(this).val() + '    ');
-            return false;
-        }
-    })
-    .val(window.localStorage.source || '');
+	$('#terminate').bind('click', function() {
+		var core_dump = compiler.terminate(true);
+		console.log(core_dump);
+	});
+
+	$('#source').bind('keydown', function(e) {
+		if(e.keyCode == 9) {
+			$(this).val($(this).val() + '    ');
+			return false;
+		}
+	})
+
+	$('#source').val(window.localStorage.source || '');
 });
